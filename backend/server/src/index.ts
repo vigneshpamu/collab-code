@@ -65,7 +65,6 @@ io.use(async (socket, next) => {
   // console.log(q)
 
   const parseQuery = handshakeSchema.safeParse(q)
-  // console.log(parseQuery) // Add this line
 
   if (!parseQuery.success) {
     console.error('Validation error:', parseQuery.error) // Log the error details
@@ -113,7 +112,6 @@ io.use(async (socket, next) => {
 
   socket.data = {
     id: virtualboxId,
-    // type: 'node',
     userId,
     isOwner: virtualbox !== undefined,
   }
@@ -127,7 +125,6 @@ io.on('connection', async (socket) => {
   const data = socket.data as {
     userId: string
     id: string
-    // type: string
     isOwner: boolean
   }
 
@@ -147,8 +144,6 @@ io.on('connection', async (socket) => {
       if (err) throw err
     })
   })
-
-  socket.emit('loaded', virtualboxFiles.files)
 
   socket.emit('loaded', virtualboxFiles.files)
 

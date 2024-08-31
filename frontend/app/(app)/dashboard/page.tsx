@@ -11,11 +11,13 @@ export default async function DashboardPage() {
     redirect('/')
   }
 
+  console.log(user.id)
+
   const userRes = await fetch(
     `https://database.vigneshpamu2002.workers.dev/api/user?id=${user.id}`
   )
-
   const userData = (await userRes.json()) as User
+  console.log(userData)
 
   const sharedRes = await fetch(
     `https://database.vigneshpamu2002.workers.dev/api/virtualbox/share?id=${user.id}`
@@ -33,6 +35,8 @@ export default async function DashboardPage() {
     }
     sharedOn: Date
   }[]
+
+  console.log('shared: ', shared)
 
   return (
     <div>

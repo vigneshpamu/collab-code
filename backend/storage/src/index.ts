@@ -16,8 +16,9 @@ import startercode from './startercode';
 export interface Env {
 	R2: R2Bucket;
 }
+
 export default {
-	async fetch(request, env, ctx): Promise<Response> {
+	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 		const success = new Response('Success', { status: 200 });
 		const notFound = new Response('Not Found', { status: 404 });
 		const methodNotAllowed = new Response('Method Not Allowed', { status: 405 });
@@ -26,7 +27,25 @@ export default {
 		const url = new URL(request.url);
 		const path = url.pathname;
 		const method = request.method;
-		if (path === '/api/size' && method === 'GET') {
+
+		if (path === '/api/project' && method === 'DELETE') {
+			const deleteSchema = z.object({
+				virtualboxId: z.string(),
+			});
+
+			const body = await request.json();
+			const { virtualboxId } = deleteSchema.parse(body);
+
+			const res = await env.R2.list({ prefix: 'projects/' + virtualboxId });
+
+			await Promise.all(
+				res.objects.map(async (file) => {
+					await env.R2.delete(file.key);
+				})
+			);
+
+			return success;
+		} else if (path === '/api/size' && method === 'GET') {
 			const params = url.searchParams;
 			const virtualboxId = params.get('virtualboxId');
 
@@ -55,15 +74,11 @@ export default {
 					return new Response(JSON.stringify(res), { status: 200 });
 				} else if (fileId) {
 					const obj = await env.R2.get(fileId);
-
 					if (obj === null) {
 						return new Response(`${fileId} not found`, { status: 404 });
 					}
-
 					const headers = new Headers();
-
 					headers.set('etag', obj.httpEtag);
-
 					obj.writeHttpMetadata(headers);
 
 					const text = await obj.text();
@@ -83,7 +98,6 @@ export default {
 				await env.R2.put(fileId, '');
 
 				return success;
-				// return new Response('Hello World!');
 			} else if (method === 'DELETE') {
 				const deleteSchema = z.object({ fileId: z.string() });
 
