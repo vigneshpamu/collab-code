@@ -26,6 +26,8 @@ export async function createVirtualbox(body: {
     }
   )
 
+  console.log(res, 'Checking')
+
   return await res.text()
 }
 

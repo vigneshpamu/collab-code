@@ -63,6 +63,7 @@ export const renameFile = async (
 }
 
 export const saveFile = async (fileId: string, data: string) => {
+  console.log('This is also running')
   const res = await fetch(
     `https://storage.vigneshpamu2002.workers.dev/api/save`,
     {
@@ -73,6 +74,8 @@ export const saveFile = async (fileId: string, data: string) => {
       body: JSON.stringify({ fileId, data }),
     }
   )
+
+  console.log('Received the response')
 
   return res.ok
 }

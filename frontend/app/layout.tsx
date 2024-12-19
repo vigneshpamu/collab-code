@@ -1,3 +1,4 @@
+'use client'
 import { ThemeProvider } from '@/components/layout/themeProvider'
 import './globals.css'
 import type { Metadata } from 'next'
@@ -11,12 +12,10 @@ import {
   UserButton,
 } from '@clerk/nextjs'
 import { Toaster } from '@/components/ui/sonner'
+import AppWrapper from '@/providers/AppWrapper'
+import { RecoilRoot } from 'recoil'
+import { ToastContainer } from 'react-toastify'
 const inter = Inter({ subsets: ['latin'] })
-
-export const metadata: Metadata = {
-  title: 'Collaborative Cloud Code Editor',
-  description: 'Collaborative Cloud Code Editor',
-}
 
 export default function RootLayout({
   children,
@@ -25,19 +24,22 @@ export default function RootLayout({
 }) {
   return (
     <ClerkProvider>
-      <html lang="en">
-        <body className={inter.className}>
-          <ThemeProvider
-            attribute="class"
-            defaultTheme="dark"
-            forcedTheme="dark"
-            disableTransitionOnChange
-          >
-            {children}
-            <Toaster position="bottom-left" richColors />
-          </ThemeProvider>
-        </body>
-      </html>
+      <RecoilRoot>
+        <html lang="en">
+          <body className={inter.className}>
+            <ThemeProvider
+              attribute="class"
+              defaultTheme=""
+              forcedTheme=""
+              disableTransitionOnChange
+            >
+              {children}
+              <Toaster position="bottom-left" richColors />
+              <ToastContainer />
+            </ThemeProvider>
+          </body>
+        </html>
+      </RecoilRoot>
     </ClerkProvider>
   )
 }

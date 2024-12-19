@@ -1,7 +1,8 @@
-//// @ts-nocheck
 'use client'
+
 import {
   FileJson,
+  Loader,
   Loader2,
   Plus,
   SquareTerminal,
@@ -10,25 +11,22 @@ import {
 } from 'lucide-react'
 import { Button } from '../ui/button'
 import {
-  ResizablePanelGroup,
-  ResizablePanel,
   ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
 } from '../ui/resizable'
 import { BeforeMount, Editor, OnMount } from '@monaco-editor/react'
-import monaco from 'monaco-editor'
 import { useEffect, useRef, useState } from 'react'
+import monaco from 'monaco-editor'
 import Sidebar from './sidebar'
-import { Tabs } from '../ui/tabs'
+import { useClerk } from '@clerk/nextjs'
 import Tab from '../ui/tab'
 import { TFile, TFolder, TTab } from './sidebar/types'
 import { io } from 'socket.io-client'
-import { User, Virtualbox } from '@/lib/types'
 import { processFileType } from '@/lib/utils'
-import { useClerk } from '@clerk/nextjs'
 import { toast } from 'sonner'
 import EditorTerminal from './terminal'
 import GenerateInput from './generate'
-// import EditorTerminal from './terminal'
 import * as Y from 'yjs'
 import { MonacoBinding } from 'y-monaco'
 import LiveblocksProvider from '@liveblocks/yjs'
@@ -36,6 +34,7 @@ import { Awareness } from 'y-protocols/awareness.js'
 import { TypedLiveblocksProvider, useRoom } from '@/liveblocks.config'
 import { Avatars } from './live/avatars'
 import { Cursors } from './live/cursors'
+import { User, Virtualbox } from '@/lib/types'
 import { Terminal } from '@xterm/xterm'
 import { createId } from '@paralleldrive/cuid2'
 import DisableAccessModal from './live/disableModel'
@@ -43,19 +42,25 @@ import PreviewWindow from './preview'
 import { ImperativePanelHandle } from 'react-resizable-panels'
 
 export default function CodeEditor({
+  isSharedUser,
   userData,
   virtualboxData,
-  isSharedUser,
 }: {
+  isSharedUser: boolean
   userData: User
   virtualboxData: Virtualbox
-  isSharedUser: boolean
 }) {
-  const clerk = useClerk()
-
+  //const editorRef = useRef<null | monaco.editor.IStandaloneCodeEditor>(null);
+  const [editorRef, setEditorRef] =
+    useState<monaco.editor.IStandaloneCodeEditor>()
   const [tabs, setTabs] = useState<TTab[]>([])
   const [activeId, setActiveId] = useState<string>('')
   const [ai, setAi] = useState(false)
+  const [files, setFiles] = useState<(TFile | TFolder)[]>([])
+  const [editorLanguage, setEditorLanguage] = useState<string | undefined>(
+    undefined
+  )
+  const [activeFile, setActiveFile] = useState<string | null>(null)
   const [terminals, setTerminals] = useState<
     {
       id: string
@@ -63,22 +68,13 @@ export default function CodeEditor({
     }[]
   >([])
   const [closingTerminal, setClosingTerminal] = useState('')
-
-  const [files, setFiles] = useState<(TFile | TFolder)[]>([])
-  const [editorLanguage, setEditorLanguage] = useState<string | undefined>(
-    undefined
-  )
-  const [activeFile, setActiveFile] = useState<string | null>(null)
-
-  const [editorRef, setEditorRef] =
-    useState<monaco.editor.IStandaloneCodeEditor>()
-  const monacoRef = useRef<typeof monaco | null>(null)
   const [provider, setProvider] = useState<TypedLiveblocksProvider>()
-
+  const monacoRef = useRef<typeof monaco | null>(null)
   const [cursorLine, setCursorLine] = useState(0)
   const [activeTerminalId, setActiveTerminalId] = useState('')
   const [creatingTerminal, setCreatingTerminal] = useState(false)
 
+  const generateRef = useRef<HTMLDivElement>(null)
   const [generate, setGenerate] = useState<{
     show: boolean
     id: string
@@ -87,8 +83,6 @@ export default function CodeEditor({
     widget: monaco.editor.IContentWidget | undefined
     pref: monaco.editor.ContentWidgetPositionPreference[]
   }>({ show: false, id: '', width: 0, widget: undefined, line: 0, pref: [] })
-
-  // const [generate, setGenerate] = useState({ show: false, id: '' })
   const [decorations, setDecorations] = useState<{
     options: monaco.editor.IModelDecoration[]
     instance: monaco.editor.IEditorDecorationsCollection | undefined
@@ -99,16 +93,11 @@ export default function CodeEditor({
     isDisabled: false,
     message: '',
   })
-
   const [deletingFolderId, setDeletingFolderId] = useState('')
-
   const [isPreviewCollapsed, setIsPreviewCollapsed] = useState(
     virtualboxData.type !== 'react'
   )
   const previewPanelRef = useRef<ImperativePanelHandle>(null)
-
-  const generateRef = useRef<HTMLDivElement>(null)
-  const [showGenerate, setShowGenerate] = useState(false)
 
   const socket = io(
     `http://localhost:4000?userId=${userData.id}&virtualboxId=${virtualboxData.id}`
@@ -119,320 +108,37 @@ export default function CodeEditor({
   const resizeObserver = new ResizeObserver((entries) => {
     for (const entry of entries) {
       const { width } = entry.contentRect
-      setGenerate((prev: any) => {
+      setGenerate((prev) => {
         return { ...prev, width }
       })
     }
   })
-  const handleEditorMount: OnMount = (editor: any, monaco: any) => {
-    // editorRef.current = editor
-    setEditorRef(editor)
-    monacoRef.current = monaco
-
-    editor.onDidChangeCursorPosition((e: any) => {
-      const { column, lineNumber } = e.position
-      if (lineNumber === cursorLine) return
-      setCursorLine(lineNumber)
-
-      const model = editor.getModel()
-      const endColumn = model?.getLineContent(lineNumber).length || 0
-
-      //@ts-ignore
-      setDecorations((prev) => {
-        return {
-          ...prev,
-          options: [
-            {
-              range: new monaco.Range(
-                lineNumber,
-                column,
-                lineNumber,
-                endColumn
-              ),
-              options: {
-                afterContentClassName: 'inline-decoration',
-              },
-            },
-          ],
-        }
-      })
-    })
-
-    editor.onDidBlurEditorText((e: any) => {
-      setDecorations((prev: any) => {
-        return {
-          ...prev,
-          options: [],
-        }
-      })
-    })
-
-    editor.addAction({
-      id: 'generate',
-      label: 'Generate',
-      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyG],
-      precondition:
-        'editorTextFocus && !suggestWidgetVisible && !renameInputVisible && !inSnippetMode && !quickFixWidgetVisible',
-      run: () => {
-        setGenerate((prev: any) => {
-          return {
-            ...prev,
-            show: !prev.show,
-            pref: [monaco.editor.ContentWidgetPositionPreference.BELOW],
-          }
-        })
-      },
-    })
-  }
-  // legacy-peer-deps=true
-
-  const room = useRoom()
-
   useEffect(() => {
-    const tab = tabs.find((t) => t.id === activeId)
-    const model = editorRef?.getModel()
-
-    if (!editorRef || !tab || !model) return
-
-    const yDoc = new Y.Doc()
-    const yText = yDoc.getText(tab.id)
-    const yProvider: any = new LiveblocksProvider(room, yDoc)
-
-    const onSync = (isSynced: boolean) => {
-      if (isSynced) {
-        const text = yText.toString()
-        if (text === '') {
-          if (activeFile) {
-            yText.insert(0, activeFile)
-          } else {
-            setTimeout(() => {
-              yText.insert(0, editorRef.getValue())
-            }, 0)
-          }
-        }
-      } else {
-      }
-    }
-
-    yProvider.on('sync', onSync)
-
-    setProvider(yProvider)
-
-    const binding = new MonacoBinding(
-      yText,
-      model,
-      new Set([editorRef]),
-      yProvider.awareness as Awareness
-    )
-
-    return () => {
-      yDoc?.destroy()
-      yProvider?.destroy()
-      binding?.destroy()
-      yProvider.off('sync', onSync)
-    }
-  }, [editorRef, room, activeFile])
-
-  const createTerminal = () => {
-    setCreatingTerminal(true)
-    const id = createId()
-    console.log(id)
-
-    setTerminals((prev) => [...prev, { id, terminal: null }])
-    setActiveTerminalId(id)
-
-    setTimeout(() => {
-      socket.emit('createTerminal', id, () => {
-        setCreatingTerminal(false)
-      })
-    }, 1000)
-  }
-
-  const closeTerminal = (term: { id: string; terminal: Terminal | null }) => {
-    const numTerminals = terminals.length
-
-    const index = terminals.findIndex((t) => t.id === term.id)
-
-    if (index === -1) return
-
-    setClosingTerminal(term.id)
-
-    socket.emit('closeTerminal', term.id, () => {
-      setClosingTerminal('')
-
-      const nextId =
-        activeTerminalId === term.id
-          ? numTerminals === 1
-            ? null
-            : index < numTerminals - 1
-            ? terminals[index + 1].id
-            : terminals[index - 1].id
-          : activeTerminalId
-
-      // if (activeTerminal && activeTerminal.terminal) {
-      //   activeTerminal.terminal.dispose()
-      // }
-
-      setTerminals((prev) => prev.filter((t) => t.id !== term.id))
-
-      if (!nextId) {
-        setActiveTerminalId('')
-      } else {
-        const nextTerminal = terminals.find((t) => t.id === nextId)
-
-        if (nextTerminal) {
-          setActiveTerminalId(nextTerminal.id)
-        }
-      }
-    })
-  }
-
-  useEffect(() => {
-    if (!ai) {
-      setGenerate((prev) => {
-        return {
-          ...prev,
-          show: false,
-        }
-      })
-      return
-    }
-    if (generate.show) {
-      editorRef?.changeViewZones(function (changeAccessor: any) {
-        if (!generateRef.current) return
-
-        const id = changeAccessor.addZone({
-          afterLineNumber: cursorLine,
-          heightInLines: 3,
-          domNode: generateRef.current,
-        })
-
-        setGenerate((prev: any) => {
-          return { ...prev, id, line: cursorLine }
-        })
-      })
-
-      if (!generateWidgetRef.current) return
-
-      const widgetElement = generateWidgetRef.current
-
-      const contentWidget = {
-        getDomNode: () => {
-          return widgetElement
-        },
-        getId: () => {
-          return 'generate.widget'
-        },
-        getPosition: () => {
-          return {
-            position: {
-              lineNumber: cursorLine,
-              column: 1,
-            },
-            preference: generate.pref,
-          }
-        },
-      }
-
-      setGenerate((prev: any) => {
-        return { ...prev, widget: contentWidget }
-      })
-
-      editorRef?.addContentWidget(contentWidget)
-
-      if (generateRef.current && generateWidgetRef.current) {
-        editorRef?.applyFontInfo(generateRef.current)
-        editorRef?.applyFontInfo(generateWidgetRef.current)
-      }
-    } else {
-      editorRef?.changeViewZones(function (changeAccessor: any) {
-        if (!generateRef.current) return
-
-        changeAccessor.removeZone(generate.id)
-        setGenerate((prev: any) => {
-          return { ...prev, id: '' }
-        })
-      })
-
-      if (!generate.widget) return
-      editorRef?.removeContentWidget(generate.widget)
-      setGenerate((prev: any) => {
-        return {
-          ...prev,
-          widget: undefined,
-        }
-      })
-    }
-  }, [generate.show])
-
-  useEffect(() => {
-    if (decorations.options.length === 0) {
-      decorations.instance?.clear()
-      // return
-    }
-
-    if (!ai) return
-
-    if (decorations.instance) {
-      decorations.instance.set(decorations.options)
-    } else {
-      const instance = editorRef?.createDecorationsCollection()
-      instance?.set(decorations.options)
-
-      setDecorations((prev: any) => {
-        return {
-          ...prev,
-          instance,
-        }
-      })
-    }
-  }, [decorations.options])
-
-  // console.log(files, 'files')
-
-  useEffect(() => {
+    console.log('connecting')
     socket.connect()
+    console.log('connected')
 
     if (editorContainerRef.current) {
       resizeObserver.observe(editorContainerRef.current)
     }
-
     return () => {
       socket.disconnect()
+
       resizeObserver.disconnect()
 
       // terminals.forEach((term) => {
       //   if (term.terminal) {
-      //     term.terminal.dispose()
+      //     term.terminal.dispose();
       //   }
-      // })
+      // });
     }
   }, [])
 
   useEffect(() => {
     function onLoadedEvent(files: (TFolder | TFile)[]) {
+      console.log('files')
       console.log(files)
       setFiles(files)
-    }
-
-    const onConnect = () => {
-      // console.log('connected')
-      // setTimeout(() => {
-      //   socket.emit('createTerminal', { id: 'testId' })
-      // }, 1000)
-      // createTerminal()
-    }
-
-    const onDisconnect = () => {
-      setTerminals([])
-      // closeAllTerminals()
-    }
-
-    const onDisableAccess = (message: string) => {
-      setDisableAccess({
-        isDisabled: true,
-        message: message,
-      })
     }
 
     const onRateLimit = (message: string) => {
@@ -445,20 +151,33 @@ export default function CodeEditor({
       const term = terminals.find((t) => t.id === response.id)
       if (term && term.terminal) term.terminal.write(response.data)
     }
-    // @ts-nocheck
+
+    const onConnect = () => {}
+
+    const onDisconnect = () => {
+      setTerminals([])
+    }
+
+    const onDisableAccess = (message: string) => {
+      setDisableAccess({
+        isDisabled: true,
+        message: message,
+      })
+    }
+
     socket.on('connect', onConnect)
     socket.on('disconnect', onDisconnect)
+
     socket.on('loaded', onLoadedEvent)
     socket.on('rateLimit', onRateLimit)
     socket.on('terminalResponse', onTerminalResponse)
     socket.on('disableAccess', onDisableAccess)
-
     return () => {
       socket.off('loaded', onLoadedEvent)
       socket.off('disconnect', onDisconnect)
       socket.off('connect', onConnect)
       socket.off('rateLimit', onRateLimit)
-      socket.on('terminalResponse', onTerminalResponse)
+      socket.off('terminalResponse', onTerminalResponse)
       socket.off('disableAccess', onDisableAccess)
     }
   }, [terminals])
@@ -514,6 +233,267 @@ export default function CodeEditor({
     }
   }
 
+  const clerk = useClerk()
+
+  const handleEditorMount: OnMount = (editor, monaco) => {
+    setEditorRef(editor)
+    monacoRef.current = monaco
+
+    editor.onDidChangeCursorPosition((e) => {
+      const { column, lineNumber } = e.position
+      if (lineNumber === cursorLine) return
+      setCursorLine(lineNumber)
+
+      const model = editor.getModel()
+      const endColumn = model?.getLineContent(lineNumber).length || 0
+
+      //@ts-ignore
+      setDecorations((prev) => {
+        return {
+          ...prev,
+          options: [
+            {
+              range: new monaco.Range(
+                lineNumber,
+                column,
+                lineNumber,
+                endColumn
+              ),
+              options: {
+                afterContentClassName: 'inline-decoration',
+              },
+            },
+          ],
+        }
+      })
+    })
+
+    editor.onDidBlurEditorText((e) => {
+      setDecorations((prev) => {
+        return {
+          ...prev,
+          options: [],
+        }
+      })
+    })
+
+    editor.addAction({
+      id: 'generate',
+      label: 'Generate',
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyG],
+      precondition:
+        'editorTextFocus && !suggestWidgetVisible && !renameInputVisible && !inSnippetMode && !quickFixWidgetVisible',
+      run: () => {
+        setGenerate((prev) => {
+          return {
+            ...prev,
+            show: !prev.show,
+            pref: [monaco.editor.ContentWidgetPositionPreference.BELOW],
+          }
+        })
+      },
+    })
+  }
+
+  const createTerminal = () => {
+    setCreatingTerminal(true)
+    const id = createId()
+    console.log(id)
+
+    setTerminals((prev) => [...prev, { id, terminal: null }])
+    setActiveTerminalId(id)
+
+    setTimeout(() => {
+      socket.emit('createTerminal', id, () => {
+        setCreatingTerminal(false)
+      })
+    }, 1000)
+  }
+
+  const closeTerminal = (term: { id: string; terminal: Terminal | null }) => {
+    const numTerminals = terminals.length
+    const index = terminals.findIndex((t) => t.id === term.id)
+
+    if (index === -1) return
+
+    setClosingTerminal(term.id)
+
+    socket.emit('closeTerminal', term.id, () => {
+      setClosingTerminal('')
+      const nextId =
+        activeTerminalId === term.id
+          ? numTerminals === 1
+            ? null
+            : index < numTerminals - 1
+            ? terminals[index + 1].id
+            : terminals[index - 1].id
+          : activeTerminalId
+
+      // if (activeTerminal && activeTerminal.terminal) {
+      //   activeTerminal.terminal.dispose();
+      // }
+
+      setTerminals((prev) => prev.filter((t) => t.id !== term.id))
+
+      if (!nextId) {
+        setActiveTerminalId('')
+      } else {
+        const nextTerminal = terminals.find((t) => t.id === nextId)
+        if (nextTerminal) {
+          setActiveTerminalId(nextTerminal.id)
+        }
+      }
+    })
+  }
+
+  useEffect(() => {
+    console.log('activedId changed:', activeId)
+  }, [activeId])
+
+  const room = useRoom()
+
+  useEffect(() => {
+    const tab = tabs.find((t) => t.id === activeId)
+    const model = editorRef?.getModel()
+
+    if (!editorRef || !tab || !model) return
+
+    const yDoc = new Y.Doc()
+    const yText = yDoc.getText(tab.id)
+    const yProvider: any = new LiveblocksProvider(room, yDoc)
+
+    const onSync = (isSynced: boolean) => {
+      if (isSynced) {
+        const text = yText.toString()
+        if (text === '') {
+          if (activeFile) {
+            yText.insert(0, activeFile)
+          } else {
+            setTimeout(() => {
+              yText.insert(0, editorRef.getValue())
+            }, 0)
+          }
+        }
+      } else {
+      }
+    }
+
+    yProvider.on('sync', onSync)
+
+    setProvider(yProvider)
+
+    const binding = new MonacoBinding(
+      yText,
+      model,
+      new Set([editorRef]),
+      yProvider.awareness as Awareness
+    )
+
+    return () => {
+      yDoc?.destroy()
+      yProvider?.destroy()
+      binding?.destroy()
+      yProvider.off('sync', onSync)
+    }
+  }, [editorRef, room, activeFile])
+
+  useEffect(() => {
+    if (!ai) {
+      setGenerate((prev) => {
+        return {
+          ...prev,
+          show: false,
+        }
+      })
+      return
+    }
+    if (generate.show) {
+      editorRef?.changeViewZones(function (changeAccessor) {
+        if (!generateRef.current) return
+        const id = changeAccessor.addZone({
+          afterLineNumber: cursorLine,
+          heightInLines: 3,
+          domNode: generateRef.current,
+        })
+
+        setGenerate((prev) => {
+          return { ...prev, id, line: cursorLine }
+        })
+      })
+
+      if (!generateWidgetRef.current) return
+
+      const widgetElement = generateWidgetRef.current
+
+      const contentWidget = {
+        getDomNode: () => {
+          return widgetElement
+        },
+        getId: () => {
+          return 'generate.widget'
+        },
+        getPosition: () => {
+          return {
+            position: {
+              lineNumber: cursorLine,
+              column: 1,
+            },
+            preference: generate.pref,
+          }
+        },
+      }
+
+      setGenerate((prev) => {
+        return { ...prev, widget: contentWidget }
+      })
+
+      editorRef?.addContentWidget(contentWidget)
+
+      if (generateRef.current && generateWidgetRef.current) {
+        editorRef?.applyFontInfo(generateRef.current)
+        editorRef?.applyFontInfo(generateWidgetRef.current)
+      }
+    } else {
+      editorRef?.changeViewZones(function (changeAccessor) {
+        changeAccessor.removeZone(generate.id)
+        setGenerate((prev) => {
+          return { ...prev, id: '' }
+        })
+      })
+
+      if (!generate.widget) return
+      editorRef?.removeContentWidget(generate.widget)
+      setGenerate((prev) => {
+        return {
+          ...prev,
+          widget: undefined,
+        }
+      })
+    }
+  }, [generate.show])
+
+  useEffect(() => {
+    if (decorations.options.length === 0) {
+      decorations.instance?.clear()
+    }
+
+    if (!ai) return
+
+    if (decorations.instance) {
+      decorations.instance.set(decorations.options)
+    } else {
+      const instance = editorRef?.createDecorationsCollection()
+      instance?.set(decorations.options)
+
+      setDecorations((prev) => {
+        return {
+          ...prev,
+          instance,
+        }
+      })
+    }
+  }, [decorations.options])
+
   const handleRename = (
     id: string,
     newName: string,
@@ -533,10 +513,13 @@ export default function CodeEditor({
       toast.error('Invalid file name')
       return false
     }
+
     socket.emit('renameFile', id, newName)
-    setTabs((prev: any) =>
-      prev.map((tab: any) => (tab.id === id ? { ...tab, name: newName } : tab))
+
+    setTabs((prev) =>
+      prev.map((tab) => (tab.id === id ? { ...tab, name: newName } : tab))
     )
+
     return true
   }
 
@@ -545,15 +528,18 @@ export default function CodeEditor({
       if (e.key === 's' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault()
 
-        const activeTab = tabs.find((t: any) => t.id === activeId)
+        const activeTab = tabs.find((t) => t.id === activeId)
 
-        setTabs((prev: any) =>
-          prev.map((tab: any) =>
+        setTabs((prev) =>
+          prev.map((tab) =>
             tab.id === activeId ? { ...tab, saved: true } : tab
           )
         )
 
+        console.log('Saving the File Front')
+
         socket.emit('saveFile', activeId, editorRef?.getValue())
+        console.log('Emitting saveFile event:')
       }
     }
 
@@ -601,72 +587,22 @@ export default function CodeEditor({
 
   const handleDeleteFolder = (folder: TFolder) => {
     setDeletingFolderId(folder.id)
+
     socket.emit('getFolder', folder.id, (response: string[]) =>
       closeTabs(response)
     )
+
     socket.emit('deleteFolder', folder.id, (response: (TFolder | TFile)[]) => {
       setFiles(response)
       setDeletingFolderId('')
     })
+
     setTimeout(() => {
       setDeletingFolderId('')
     }, 3000)
   }
 
-  const handleEditorWillMount: BeforeMount = (monaco: any) => {
-    // setEditorRef(editor)
-    // monacoRef.current = monaco
-
-    // editor.onDidChangeCursorPosition((e) => {
-    //   const { column, lineNumber } = e.position
-    //   if (lineNumber === cursorLine) return
-    //   setCursorLine(lineNumber)
-
-    //   const model = editor.getModel()
-    //   const endColumn = model?.getLineContent(lineNumber).length || 0
-
-    //   //@ts-ignore
-    //   setDecorations((prev) => {
-    //     return {
-    //       ...prev,
-    //       options: [
-    //         {
-    //           range: new monaco.Range(lineNumber, column, lineNumber, endColumn),
-    //           options: {
-    //             afterContentClassName: 'inline-decoration',
-    //           },
-    //         },
-    //       ],
-    //     }
-    //   })
-    // })
-
-    // editor.onDidBlurEditorText((e) => {
-    //   setDecorations((prev) => {
-    //     return {
-    //       ...prev,
-    //       options: [],
-    //     }
-    //   })
-    // })
-
-    // editor.addAction({
-    //   id: 'generate',
-    //   label: 'Generate',
-    //   keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyG],
-    //   precondition:
-    //     'editorTextFocus && !suggestWidgetVisible && !renameInputVisible && !inSnippetMode && !quickFixWidgetVisible',
-    //   run: () => {
-    //     setGenerate((prev) => {
-    //       return {
-    //         ...prev,
-    //         show: !prev.show,
-    //         pref: [monaco.editor.ContentWidgetPositionPreference.BELOW],
-    //       }
-    //     })
-    //   },
-    // })
-
+  const handleEditorWillMount: BeforeMount = (monaco) => {
     monaco.editor.addKeybindingRules([
       {
         keybinding: monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyG,
@@ -690,13 +626,13 @@ export default function CodeEditor({
   return (
     <>
       <div ref={generateRef} />
-      <div ref={generateWidgetRef} className="z-50 p-1">
+      <div className="z-50 p-1" ref={generateWidgetRef}>
         {generate.show && ai ? (
           <GenerateInput
             user={userData}
             socket={socket}
             data={{
-              fileName: tabs.find((t: any) => t.id === activeId)?.name ?? '',
+              fileName: tabs.find((t) => t.id === activeId)?.name ?? '',
               code: editorRef?.getValue() ?? '',
               line: generate.line,
             }}
@@ -707,7 +643,7 @@ export default function CodeEditor({
             submit={(str: string) => {}}
             width={generate.width - 90}
             onExpand={() => {
-              editorRef?.changeViewZones(function (changeAccessor: any) {
+              editorRef?.changeViewZones(function (changeAccessor) {
                 changeAccessor.removeZone(generate.id)
 
                 if (!generateRef.current) return
@@ -718,14 +654,14 @@ export default function CodeEditor({
                   domNode: generateRef.current,
                 })
 
-                setGenerate((prev: any) => {
+                setGenerate((prev) => {
                   return { ...prev, id }
                 })
               })
             }}
             onAccept={(code: string) => {
               const line = generate.line
-              setGenerate((prev: any) => {
+              setGenerate((prev) => {
                 return {
                   ...prev,
                   show: !prev.show,
@@ -753,7 +689,7 @@ export default function CodeEditor({
         socket={socket}
         addNew={(name, type) => {
           if (type === 'file') {
-            setFiles((prev: any) => [
+            setFiles((prev) => [
               ...prev,
               {
                 id: `projects/${virtualboxData.id}/${name}`,
@@ -771,7 +707,6 @@ export default function CodeEditor({
                 children: [],
               },
             ])
-            console.log('Adding Folder')
           }
         }}
         ai={ai}
@@ -786,7 +721,7 @@ export default function CodeEditor({
           className="flex flex-col p-2"
         >
           <div className="h-10 w-full flex gap-2">
-            {tabs.map((tab: any) => (
+            {tabs.map((tab) => (
               <Tab
                 key={tab.id}
                 saved={tab.saved}
@@ -797,7 +732,6 @@ export default function CodeEditor({
                 {tab.name}
               </Tab>
             ))}
-            {/* <Avatars /> */}
           </div>
           <div
             ref={editorContainerRef}
@@ -807,17 +741,15 @@ export default function CodeEditor({
               <>
                 <div className="flex items-center w-full h-full justify-center text-xl font-medium text-secondary select-none">
                   <FileJson className="w-6 h-6 mr-3" />
-                  No File Selected
+                  No File selected
                 </div>
               </>
             ) : clerk.loaded ? (
               <>
                 {provider ? <Cursors yProvider={provider} /> : null}
-
                 <Editor
                   height={'100%'}
                   defaultLanguage="typescript"
-                  language={editorLanguage}
                   theme="vs-dark"
                   beforeMount={handleEditorWillMount}
                   onMount={handleEditorMount}
@@ -836,6 +768,7 @@ export default function CodeEditor({
                       )
                     }
                   }}
+                  language={editorLanguage}
                   options={{
                     minimap: {
                       enabled: false,
@@ -867,16 +800,6 @@ export default function CodeEditor({
               onExpand={() => setIsPreviewCollapsed(false)}
               className="p-2 flex flex-col"
             >
-              {/* <div className="h-10 w-full flex gap-2">
-                <Button
-                  variant={'secondary'}
-                  size={'sm'}
-                  className="min-w-20 justify-between"
-                >
-                  localhost:3000 <X className="w-3 h-3" />
-                </Button>
-              </div>
-              <div className="w-full grow rounded-lg bg-foreground"></div> */}
               <PreviewWindow
                 collapsed={isPreviewCollapsed}
                 open={() => {
@@ -914,7 +837,7 @@ export default function CodeEditor({
                   }}
                   size={'smIcon'}
                   variant={'secondary'}
-                  className="font-normal shrink-0 mb-5 select-none text-muted-foreground"
+                  className="font-normal shrink-0 select-none text-muted-foreground"
                 >
                   {creatingTerminal ? (
                     <Loader2 className="animate-spin w-4 h-4" />
@@ -924,7 +847,7 @@ export default function CodeEditor({
                 </Button>
               </div>
               {socket && activeTerminal ? (
-                <div className="w-full grow rounded-lg bg-foreground">
+                <div className="w-full relative grow h-full overflow-hidden rounded-lg bg-secondary">
                   {terminals.map((term) => (
                     <EditorTerminal
                       key={term.id}
@@ -943,13 +866,12 @@ export default function CodeEditor({
                       visible={activeTerminalId === term.id}
                     />
                   ))}
-                  <div className="w-full h-full flex items-center justify-center text-lg font-medium text-muted-foreground/50 select-none">
-                    <TerminalSquare className="w-4 h-4 mr-2" />
-                    No Terminals Open
-                  </div>
                 </div>
               ) : (
-                <></>
+                <div className="w-full h-full flex items-center justify-center text-lg font-medium text-muted-foreground/50 select-none">
+                  <TerminalSquare className="w-4 h-4 mr-2" />
+                  No Terminals Open
+                </div>
               )}
             </ResizablePanel>
           </ResizablePanelGroup>

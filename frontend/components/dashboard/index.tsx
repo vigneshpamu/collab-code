@@ -1,28 +1,24 @@
 'use client'
 
-import { Virtualbox } from '@/lib/types'
-import { Button } from '../ui/button'
-import CustomButton from '../ui/customButton'
 import {
-  Plus,
-  FolderDot,
-  Users,
-  Settings,
   Code2,
+  FolderDot,
   HelpCircle,
-  Clock,
-  Globe,
+  Plus,
+  Settings,
+  Users,
 } from 'lucide-react'
+import CustomButton from '../ui/customButton'
+import { Button } from '../ui/button'
 import { useState } from 'react'
-import ProjectCard from './projectCard'
-import Image from 'next/image'
-import ProjectCardDropdown from './projectCard/dropdown'
+import { Virtualbox } from '@/lib/types'
 import DashboardSharedWithMe from './shared'
 import DashboardProjects from './projects'
 import NewProjectModal from './newProject'
 import { useSearchParams } from 'next/navigation'
 import AboutModal from './about'
 import { toast } from 'sonner'
+
 type TScreen = 'projects' | 'shared' | 'settings' | 'search'
 
 export default function Dashboard({
@@ -62,7 +58,6 @@ export default function Dashboard({
         setOpen={setNewProjectModalOpen}
       />
       <AboutModal open={aboutModalOpen} setOpen={setAboutModalOpen} />
-
       <div className="flex grow w-full">
         <div className="w-56 shrink-0 border-r border-border p-4 justify-between flex flex-col">
           <div className="flex flex-col">
