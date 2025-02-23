@@ -8,7 +8,8 @@ import EditorFooter from './EditorFooter'
 import { Problem } from '@/utils/types/problem'
 import { useAuthState } from 'react-firebase-hooks/auth'
 import { auth, firestore } from '../../../_leetcode_things/firebase/firebase'
-import { toast } from 'react-toastify'
+import { Toaster, toast } from 'react-hot-toast'
+
 import { problems } from '@/utils/problems'
 import { useRouter } from 'next/router'
 import { arrayUnion, doc, updateDoc } from 'firebase/firestore'
@@ -51,11 +52,7 @@ const Playground: React.FC<PlaygroundProps> = ({
   const handleSubmit = async () => {
     console.log('jj')
     if (!user) {
-      toast.error('Please login to submit your code', {
-        position: 'top-center',
-        autoClose: 3000,
-        theme: 'dark',
-      })
+      toast.error('Please login to submit your code')
       console.log('Login')
       return
     }
@@ -68,11 +65,7 @@ const Playground: React.FC<PlaygroundProps> = ({
         const success = handler(cb)
         console.log('Working')
         if (success) {
-          toast.success('Congrats! All tests passed!', {
-            position: 'top-center',
-            autoClose: 3000,
-            theme: 'dark',
-          })
+          toast.success('Congrats! All tests passed!')
           setSuccess(true)
           setTimeout(() => {
             setSuccess(false)
@@ -86,23 +79,15 @@ const Playground: React.FC<PlaygroundProps> = ({
         }
       }
     } catch (error: any) {
-      console.log(error.message)
+      console.log(error.message, 'Huuu')
       if (
         error.message.startsWith(
           'AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:'
         )
       ) {
-        toast.error('Oops! One or more test cases failed', {
-          position: 'top-center',
-          autoClose: 3000,
-          theme: 'dark',
-        })
+        toast.error('Oops! One or more test cases failed')
       } else {
-        toast.error(error.message, {
-          position: 'top-center',
-          autoClose: 3000,
-          theme: 'dark',
-        })
+        // toast.error(error.message)
       }
     }
   }
@@ -123,6 +108,8 @@ const Playground: React.FC<PlaygroundProps> = ({
 
   return (
     <div className="flex flex-col bg-dark-layer-1 relative overflow-x-hidden">
+      <Toaster position="top-center" />
+
       <PreferenceNav settings={settings} setSettings={setSettings} />
 
       <Split

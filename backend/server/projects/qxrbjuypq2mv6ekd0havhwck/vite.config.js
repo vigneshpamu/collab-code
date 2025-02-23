@@ -7,5 +7,7 @@ export default defineConfig({
   server: {
     port: 5173,
     host: "0.0.0.0",
+    https: false, // Ensure this is false if not using HTTPS
+
   }
 })
